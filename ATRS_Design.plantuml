@@ -1,0 +1,379 @@
+@startuml
+salt
+{
+  Basic search form
+  ^From^ | ^To^ | [X] Round trip
+  ^DateFrom^ | ^DateTo^ | [ ] +/- 3 days
+  ^#Adults^ | ^#Children^
+
+  [Search]
+}
+@enduml
+
+
+
+@startuml
+salt
+{
+  Search results
+  Price | Flights information | [Details] | [ ] Book it
+  Price | Flights information | [Details] | [ ] Book it
+  Price | Flights information | [Details] | [ ] Book it
+}
+@enduml
+
+
+@startuml
+
+hide footbox
+title "General booking process (success)"
+
+actor "Public User" as PU
+boundary "Process payment" as GUI
+control "Payment controller" as PC
+control "Notification Controller" as NC
+entity "Booking" as BK
+database "Bookings" as BKS
+entity "Remote PSP" as PSP
+
+PU -> PC : Redirect to execute "process payment"
+PC -> BK : new(UnpayedState)
+PC -> BKS : save
+PC -> GUI : present PSP payment page
+PU -> GUI : credit card info
+GUI -> PSP : authorize payment
+PSP -> PC : result (via callback)
+PC -> BKS : save(PayedState)
+PC -> NC : notify Public User
+NC -> NC : create PDF document notification
+NC -> PU : send PDF (via e-mail)
+NC -> BKS : save(ProcessedState)
+
+@enduml
+
+
+@startuml
+
+title Domain classes
+
+class Schedule
+class ScheduleEntry {
+ +date
+}
+class Flight {
+ +number
+}
+class AirJet
+
+class Booking {
+ +seat
+}
+
+class Order {
+ +state
+}
+class Payment
+
+class PublicUser {
+ +login
+}
+
+class Passenger {
+ +info
+}
+
+Schedule --> "*" ScheduleEntry
+ScheduleEntry --> Flight
+Flight --> AirJet
+
+Order --> "1..*" Booking
+Booking --> Flight
+Order -right-> Payment
+PublicUser -right-> Order
+Passenger -right-> Booking
+
+@enduml
+
+
+@startuml
+
+title Simplified data view
+
+class ScheduleEntry {
+ +date
+ +flight
+}
+
+class Flight {
+ +number
+ +airJet
+ +basePrice
+ +classATotal
+ +classAavailable
+ +classBTotal
+ +classBavailable
+ +classCTotal
+ +classCavailable
+}
+
+class SeatClass {
+ +class
+ +costMultiplier
+ }
+
+class Order {
+ +creationDate
+ +state
+ +price
+ +paymentId
+ +publicUserId
+}
+
+class Booking {
+ +orderId
+ +seat
+ +price
+ +status
+ +passengerInfo
+ +cancelationToken
+ +viewToken
+ +...
+}
+
+class OrderHistory {
+ +id
+ +state
+ +date
+ }
+
+class BookingHistory {
+ +id
+ +status
+ +date
+ }
+
+class PublicUser {
+ +login
+ +secutityProvider
+}
+
+ScheduleEntry --> Flight
+Booking "*" --> Order
+PublicUser --> "*" Order
+
+
+@enduml
+
+
+
+@startuml
+
+title Top level functional view of the system
+
+package "User system" {
+    component [Browser] as Browser
+}
+
+package "Future mobile plaform" {
+    component [MobileApp] as MA
+}
+
+
+cloud "Cloud provider" {
+    database "SQL DB\n" {
+        [Stored Procs] as SPs
+    }
+    [SPA]
+    [Core services] as CS  
+    [Scheduler] as Scheduler  
+    interface "REST services" as REST
+} 
+
+node "Staff Security Provider" {
+ [Active Directory] as SSP
+}
+
+cloud "Security Providers" {
+ [Google]
+ [Twitter]
+ [LinkedIn]
+}
+
+Browser -down-> SPA
+Browser -left-> Google
+Browser -left-> SSP
+CS -up-( REST
+SPA -> REST
+MA -> REST
+CS -> SPs
+Scheduler -> REST
+
+@enduml
+
+
+
+@startuml
+
+title Scheduler
+
+
+class Scheduler {
+ +isMaster
+}
+
+class Task {
+  +lastStartTime
+  +lastCompleteTime
+}
+
+class Schedule
+class ScheduleRecord {
+ +timeout
+}
+
+Schedule -right-> "*" ScheduleRecord
+ScheduleRecord -right-> Task : list
+
+Scheduler -right-> Scheduler : watchdog
+Scheduler --|> Task
+Scheduler --> Task : run
+Scheduler -right-> Schedule
+
+Schedule -right-> "*" Task
+
+
+@enduml
+
+
+
+
+@startuml
+
+title Search by criteria
+
+class Operator
+class UnaryOperator
+class BinaryOperator
+
+class SearchCriteria
+class TerminalSearchCriteria
+
+class CompositeSearchCriteria {
+ +SearchCriteria left
+ +BinaryOperator op
+ +SearchCriteria right
+}
+
+SearchCriteria <|-- TerminalSearchCriteria
+SearchCriteria <|-- CompositeSearchCriteria
+SearchCriteria --> Operator
+UnaryOperator --|> Operator
+BinaryOperator --|> Operator
+
+class SearchRequest --> SearchCriteria
+
+class SQLSearchBuilder {
+ +build(SearchRequest)
+}
+
+SQLSearchBuilder -left-> SearchRequest
+MSSQLSearchBuilder -left-|> SQLSearchBuilder
+
+
+@enduml
+
+
+
+
+
+@startuml
+
+title PSP Facade
+
+class Operation
+class PaymentOp {
+ +summ
+ +creditCardNo
+ +expiryDate
+ +holder
+ +...
+}
+class RefundOp {
+ +paymentId
+ +securityKey
+ +...
+}
+PaymentOp --|> Operation
+RefundOp --|> Operation
+
+class Result
+class Payment {
+ +paymentId
+}
+class Refund {
+ +status
+}
+Payment --|>Result
+Refund --|>Result
+
+class PSP {
+ +Result execute(Operation op)
+}
+PSP --> Operation
+PSP --> Result
+
+class ConcretePSP {
+ -formatRequest()
+ -sendRequest()
+ -formatResponse()
+}
+
+ConcretePSP --|> PSP
+
+@enduml
+
+
+
+@startuml
+title Order State Model
+[*] --> NewOrder
+state NewOrder
+
+state NewOrder {
+  state RequestingBookings
+  state BookingsProcessed
+  state PaymentProcessing
+  state PaymentProcessed
+  state Registered
+  RequestingBookings --> BookingsProcessed
+  BookingsProcessed--> PaymentProcessing
+  PaymentProcessing --> PaymentProcessed
+  PaymentProcessed --> Registered
+}
+
+state DeletedOrder {
+  state DeletingBookings
+  state BookingsDeleted
+  state Deleted
+  DeletingBookings --> BookingsDeleted
+  BookingsDeleted --> Deleted
+}
+
+NewOrder -right-> DeletedOrder : inability to proces \n/ user cancelation\n/ error
+
+state RegisteredOrder {
+  state Registering
+  state SendingNotification
+  state Completed
+  state FailedToNotify
+  Registering --> SendingNotification
+  SendingNotification --> Completed
+  SendingNotification --> FailedToNotify
+}
+
+NewOrder -left-> RegisteredOrder
+
+@enduml
+
+
+
